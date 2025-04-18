@@ -1,5 +1,6 @@
 import sqlite3
 import pandas as pd
+import streamlit as st
 from datetime import datetime
 from contextlib import contextmanager
 
@@ -9,6 +10,7 @@ class Database:
         self._ensure_tables_exist()
         self.income_categories = []
         self.expense_categories = []
+        self.load_categories()
     
     @contextmanager
     def _get_connection(self):
@@ -20,7 +22,6 @@ class Database:
     
     def _ensure_tables_exist(self):
         with self._get_connection() as conn:
-            # Bảng giao dịch
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +33,6 @@ class Database:
                 )
             ''')
             
-            # Bảng số dư ban đầu
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS balance (
                     id INTEGER PRIMARY KEY DEFAULT 1,
@@ -40,7 +40,6 @@ class Database:
                 )
             ''')
             
-            # Bảng ngân sách
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS budgets (
                     category TEXT PRIMARY KEY,
@@ -48,7 +47,6 @@ class Database:
                 )
             ''')
             
-            # Bảng nhắc nhở
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS reminders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +57,6 @@ class Database:
                 )
             ''')
             
-            # Bảng mục tiêu tiết kiệm
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS saving_goals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +66,6 @@ class Database:
                 )
             ''')
             
-            # Bảng danh mục
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +77,7 @@ class Database:
             
             conn.commit()
     
-    def load_categories(self):
+    def load_categories(self, language='vi'):  # Đảm bảo phương thức này tồn tại
         with self._get_connection() as conn:
             self.income_categories = [row[0] for row in 
                 conn.execute("SELECT name FROM categories WHERE type = 'income'")]
@@ -89,12 +85,21 @@ class Database:
                 conn.execute("SELECT name FROM categories WHERE type = 'expense'")]
             
             if not self.income_categories:
-                default_income = ['Lương', 'Thưởng', 'Đầu tư', 'Kinh doanh', 'Quà tặng', 'Khác']
+                # Phần thêm danh mục mặc định theo ngôn ngữ
+                if language == 'vi':
+                    default_income = ['Lương', 'Thưởng', 'Đầu tư', 'Kinh doanh', 'Quà tặng', 'Khác']
+                else:
+                    default_income = ['Salary', 'Bonus', 'Investment', 'Business', 'Gift', 'Other']
+                
                 for cat in default_income:
                     self.add_category('income', cat)
             
             if not self.expense_categories:
-                default_expense = ['Ăn uống', 'Nhà ở', 'Đi lại', 'Giải trí', 'Y tế', 'Giáo dục', 'Tiết kiệm', 'Khác']
+                if language == 'vi':
+                    default_expense = ['Ăn uống', 'Nhà ở', 'Đi lại', 'Giải trí', 'Y tế', 'Giáo dục', 'Tiết kiệm', 'Khác']
+                else:
+                    default_expense = ['Food', 'Housing', 'Transport', 'Entertainment', 'Healthcare', 'Education', 'Savings', 'Other']
+                
                 for cat in default_expense:
                     self.add_category('expense', cat)
     
@@ -106,9 +111,11 @@ class Database:
                 conn.commit()
                 
                 if category_type == 'income':
-                    self.income_categories.append(name)
+                    if name not in self.income_categories:
+                        self.income_categories.append(name)
                 else:
-                    self.expense_categories.append(name)
+                    if name not in self.expense_categories:
+                        self.expense_categories.append(name)
             except sqlite3.IntegrityError:
                 pass
     
@@ -161,7 +168,7 @@ class Database:
                 VALUES (?, ?)
             ''', (category, amount))
             conn.commit()
-    
+
     def get_budgets(self):
         with self._get_connection() as conn:
             budgets = conn.execute('SELECT category, amount FROM budgets').fetchall()

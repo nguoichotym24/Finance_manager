@@ -1,431 +1,517 @@
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 import hashlib
 from database import Database
 from utils import create_expense_by_category_chart, create_expense_trend_chart, format_currency
+from i18n import translator
 
 # Khởi tạo session state
 if 'db' not in st.session_state:
     st.session_state.db = Database()
     st.session_state.db.load_categories()
 
+# Thêm sau phần khởi tạo session state
+if 'translator' not in st.session_state:
+    st.session_state.translator = translator
+    st.session_state.translator.load_translations()  # Force reload translations
+
 # Tiêu đề ứng dụng
-st.title('💰 Quản lý Tài chính Cá nhân')
+st.title(translator.t("app_title"))
 
 # --- Phần xác thực ---
 with st.sidebar:
-    st.subheader('🔐 Bảo mật')
+    st.subheader(f'🔐 {translator.t("security")}')
     
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     
     if not st.session_state.authenticated:
-        password = st.text_input('Mật khẩu', type='password', key='auth_password')
-        if st.button('Đăng nhập'):
+        password = st.text_input(translator.t("password"), type='password', key='auth_password')
+        if st.button(translator.t("login_button")):
             if hashlib.sha256(password.encode()).hexdigest() == '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92':
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error('Mật khẩu không đúng')
+                st.error(translator.t("wrong_password"))
     else:
-        st.success('Đã đăng nhập')
-        if st.button('Đăng xuất'):
+        st.success(translator.t("logged_in"))
+        if st.button(translator.t("logout_button")):
             st.session_state.authenticated = False
             st.rerun()
 
+    # Chọn ngôn ngữ
+    lang = st.selectbox("🌐", ["Việt Nam", "English"], index=0 if translator.current_language == 'vi' else 1)
+    translator.set_language('vi' if lang == 'Việt Nam' else 'en')
+
 if not st.session_state.authenticated:
-    st.warning('Vui lòng đăng nhập để sử dụng ứng dụng')
+    st.warning(translator.t("login_warning"))
     st.stop()
 
 # --- Cấu trúc menu chính ---
 menu_options = {
-    "🏠 Tổng quan": "overview",
-    "💸 Quản lý giao dịch": {
-        "➕ Thêm giao dịch mới": "add_transaction",
-        "📋 Xem lịch sử giao dịch": "view_transactions",
-        "📊 Phân tích chi tiêu": "expense_analysis"
+    translator.t("overview"): "overview",
+    translator.t("transaction_management"): {
+        translator.t("add_transaction"): "add_transaction",
+        translator.t("view_transactions"): "view_transactions",
+        translator.t("expense_analysis"): "expense_analysis"
     },
-    "📋 Quản lý danh mục": "manage_categories",
-    "💰 Quản lý ngân sách": "manage_budgets",
-    "⏰ Nhắc nhở thanh toán": "payment_reminders",
-    "🎯 Mục tiêu tiết kiệm": "saving_goals",
-    "⚙️ Cài đặt & Dữ liệu": "settings"
+    translator.t("manage_categories"): "manage_categories",
+    translator.t("manage_budgets"): "manage_budgets",
+    translator.t("payment_reminders"): "payment_reminders",
+    translator.t("saving_goals"): "saving_goals",
+    translator.t("settings"): "settings"
 }
 
 # --- Sidebar menu ---
 with st.sidebar:
-    st.header("📌 Menu chính")
+    st.header(translator.t("main_menu"))
     
-    # Tạo menu đa cấp
-    selected_menu = st.selectbox(
-        "Chọn chức năng",
+    selected_main = st.selectbox(
+        translator.t("select_function"),
         options=list(menu_options.keys()),
         key="main_menu"
     )
     
-    # Xác định mục được chọn
-    if isinstance(menu_options[selected_menu], dict):
-        submenu = st.selectbox(
-            "Chọn mục con",
-            options=list(menu_options[selected_menu].keys()),
+    # Xử lý submenu
+    selected_option = menu_options[selected_main]
+    if isinstance(selected_option, dict):
+        selected_sub = st.selectbox(
+            translator.t("select_submenu"),
+            options=list(selected_option.keys()),
             key="sub_menu"
         )
-        selected_option = menu_options[selected_menu][submenu]
-    else:
-        selected_option = menu_options[selected_menu]
+        selected_option = selected_option[selected_sub]
 
-# --- Main content dựa trên menu được chọn ---
+# --- Main content ---
 transactions = st.session_state.db.load_transactions()
 balance = st.session_state.db.get_balance()
 
 if selected_option == "overview":
-    # --- Trang tổng quan ---
-    st.header('🏠 Tổng quan tài chính')
+    st.header(f'🏠 {translator.t("overview")}')
     
-    # Hiển thị các chỉ số chính
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric('Số dư hiện tại', format_currency(balance))
+        st.metric(translator.t("current_balance"), format_currency(balance))
     with col2:
         total_income = transactions[transactions['loai'] == 'Thu']['so_tien'].sum()
-        st.metric('Tổng thu nhập', format_currency(total_income))
+        st.metric(translator.t("total_income"), format_currency(total_income))
     with col3:
         total_expense = transactions[transactions['loai'] == 'Chi']['so_tien'].sum()
-        st.metric('Tổng chi tiêu', format_currency(total_expense))
+        st.metric(translator.t("total_expense"), format_currency(total_expense))
     
-    # Biểu đồ tổng quan
     if not transactions.empty:
-        st.subheader('📈 Biểu đồ chi tiêu tháng này')
+        st.subheader(translator.t("expense_by_category"))
         st.plotly_chart(create_expense_by_category_chart(st.session_state.db.get_category_summary()))
         
-        st.subheader('📅 Lịch sử giao dịch gần đây')
+        st.subheader(translator.t("recent_transactions"))
         st.dataframe(
             transactions.head(5).rename(columns={
-                'ngay': 'Ngày',
-                'loai': 'Loại',
-                'danh_muc': 'Danh mục',
-                'so_tien': 'Số tiền',
-                'mo_ta': 'Mô tả'
+                'ngay': translator.t("date"),
+                'loai': translator.t("type"),
+                'danh_muc': translator.t("category"),
+                'so_tien': translator.t("amount"),
+                'mo_ta': translator.t("description")
             }),
             hide_index=True
         )
 
 elif selected_option == "add_transaction":
-    # --- Thêm giao dịch mới ---
-    st.header('💸 Thêm giao dịch mới')
+    st.header(f'💸 {translator.t("add_transaction")}')
     
     with st.form("transaction_form"):
         col1, col2 = st.columns(2)
         with col1:
-            date = st.date_input('Ngày', datetime.now())
+            date = st.date_input(translator.t("date"), datetime.now())
         with col2:
-            trans_type = st.selectbox('Loại giao dịch', ['Thu', 'Chi'])
+            trans_type = st.selectbox(translator.t("type"), [translator.t("income"), translator.t("expense")])
         
-        # Hiển thị danh mục phù hợp
-        if trans_type == 'Thu':
-            categories = st.session_state.db.income_categories
-        else:
-            categories = st.session_state.db.expense_categories
+        categories = (st.session_state.db.income_categories if trans_type == translator.t("income") 
+                     else st.session_state.db.expense_categories)
+        category = st.selectbox(translator.t("category"), categories)
+        amount = st.number_input(translator.t("amount"), min_value=0)
+        description = st.text_input(translator.t("description"))
         
-        category = st.selectbox('Danh mục', categories)
-        amount = st.number_input('Số tiền', min_value=0)
-        description = st.text_input('Mô tả')
-        
-        submitted = st.form_submit_button("💾 Lưu giao dịch")
+        submitted = st.form_submit_button(translator.t("save_transaction"))
         if submitted:
             try:
                 st.session_state.db.add_transaction(
                     date.strftime('%Y-%m-%d'),
-                    trans_type,
+                    'Thu' if trans_type == translator.t("income") else 'Chi',
                     category,
                     amount,
                     description
                 )
-                st.success('Đã thêm giao dịch thành công!')
+                st.success(translator.t("transaction_success"))
+                st.rerun()
             except Exception as e:
-                st.error(f'Lỗi: {str(e)}')
+                st.error(f"{translator.t('error')}: {str(e)}")
 
 elif selected_option == "view_transactions":
-    # --- Xem lịch sử giao dịch ---
-    st.header('📋 Lịch sử giao dịch')
+    st.header(f'📋 {translator.t("transaction_history")}')
     
     if not transactions.empty:
-        # Bộ lọc
-        with st.expander("🔍 Bộ lọc"):
+        with st.expander(f"🔍 {translator.t('filter')}"):
             col1, col2, col3 = st.columns(3)
             with col1:
-                filter_type = st.selectbox('Loại giao dịch', ['Tất cả', 'Thu', 'Chi'])
+                filter_type = st.selectbox(translator.t("type"), ['All', translator.t("income"), translator.t("expense")])
             with col2:
-                filter_category = st.selectbox('Danh mục', ['Tất cả'] + st.session_state.db.expense_categories + st.session_state.db.income_categories)
+                categories = ['All'] + st.session_state.db.expense_categories + st.session_state.db.income_categories
+                filter_category = st.selectbox(translator.t("category"), categories)
             with col3:
-                date_range = st.date_input('Khoảng thời gian', [transactions['ngay'].min(), transactions['ngay'].max()])
+                date_range = st.date_input(translator.t("date_range"), 
+                                         [transactions['ngay'].min(), transactions['ngay'].max()])
         
-        # Áp dụng bộ lọc
         filtered_transactions = transactions.copy()
-        if filter_type != 'Tất cả':
-            filtered_transactions = filtered_transactions[filtered_transactions['loai'] == filter_type]
-        if filter_category != 'Tất cả':
+        if filter_type != 'All':
+            trans_type = 'Thu' if filter_type == translator.t("income") else 'Chi'
+            filtered_transactions = filtered_transactions[filtered_transactions['loai'] == trans_type]
+        if filter_category != 'All':
             filtered_transactions = filtered_transactions[filtered_transactions['danh_muc'] == filter_category]
         if len(date_range) == 2:
             filtered_transactions = filtered_transactions[
                 (filtered_transactions['ngay'] >= pd.to_datetime(date_range[0])) & 
                 (filtered_transactions['ngay'] <= pd.to_datetime(date_range[1]))]
         
-        # Hiển thị bảng
         st.dataframe(
             filtered_transactions.rename(columns={
-                'ngay': 'Ngày',
-                'loai': 'Loại',
-                'danh_muc': 'Danh mục',
-                'so_tien': 'Số tiền',
-                'mo_ta': 'Mô tả'
+                'ngay': translator.t("date"),
+                'loai': translator.t("type"),
+                'danh_muc': translator.t("category"),
+                'so_tien': translator.t("amount"),
+                'mo_ta': translator.t("description")
             }),
             hide_index=True,
-            use_container_width=True,
-            height=500
+            use_container_width=True
         )
         
-        # Xuất báo cáo
         st.download_button(
-            label="📥 Tải xuống CSV",
+            label=translator.t("download_csv"),
             data=filtered_transactions.to_csv(index=False).encode('utf-8'),
-            file_name='bao_cao_giao_dich.csv',
+            file_name='transactions.csv',
             mime='text/csv'
         )
     else:
-        st.info('Chưa có giao dịch nào.')
+        st.info(translator.t("no_transactions"))
 
 elif selected_option == "expense_analysis":
-    # --- Phân tích chi tiêu ---
-    st.header('📊 Phân tích chi tiêu')
+    st.header(f'📊 {translator.t("expense_analysis")}')
     
     if not transactions.empty:
-        tab1, tab2 = st.tabs(["Phân bổ chi tiêu", "Xu hướng chi tiêu"])
+        tab1, tab2 = st.tabs([
+            translator.t("spending_by_category"),
+            translator.t("spending_trend")
+        ])
         
         with tab1:
-            st.subheader('Phân bổ chi tiêu theo danh mục')
-            st.plotly_chart(create_expense_by_category_chart(st.session_state.db.get_category_summary()))
+            st.subheader(translator.t("spending_by_category"))
+            category_summary = st.session_state.db.get_category_summary()
+            if category_summary:
+                st.plotly_chart(create_expense_by_category_chart(category_summary))
+            else:
+                st.info(translator.t("no_expense_data"))
         
         with tab2:
-            st.subheader('Xu hướng chi tiêu theo thời gian')
+            st.subheader(translator.t("spending_trend"))
             st.plotly_chart(create_expense_trend_chart(transactions))
             
-            st.subheader('Phân tích theo chu kỳ')
-            time_period = st.selectbox('Chọn khoảng thời gian', ['Theo tháng', 'Theo quý', 'Theo năm'])
+            st.subheader(translator.t("periodic_analysis"))
+            period = st.selectbox(translator.t("select_period"), [
+                translator.t("monthly"),
+                translator.t("quarterly"),
+                translator.t("yearly")
+            ])
             
-            if time_period == 'Theo tháng':
-                transactions['period'] = transactions['ngay'].dt.to_period('M').astype(str)
-            elif time_period == 'Theo quý':
-                transactions['period'] = transactions['ngay'].dt.to_period('Q').astype(str)
-            else:
-                transactions['period'] = transactions['ngay'].dt.to_period('Y').astype(str)
+            period_map = {
+                translator.t("monthly"): 'M',
+                translator.t("quarterly"): 'Q',
+                translator.t("yearly"): 'Y'
+            }
+            transactions['period'] = transactions['ngay'].dt.to_period(
+                period_map[period]
+            ).astype(str)
             
             period_summary = transactions.groupby(['period', 'loai'])['so_tien'].sum().unstack().fillna(0)
             st.bar_chart(period_summary)
     else:
-        st.info('Chưa có dữ liệu để phân tích.')
+        st.info(translator.t("no_transaction_data"))
 
 elif selected_option == "manage_categories":
-    # --- Quản lý danh mục ---
-    st.header('📋 Quản lý danh mục')
+    st.header(f'📋 {translator.t("manage_categories")}')
     
-    tab1, tab2 = st.tabs(["Danh mục thu", "Danh mục chi"])
+    tab1, tab2 = st.tabs([
+        translator.t("income_categories"),
+        translator.t("expense_categories")
+    ])
     
     with tab1:
-        st.subheader("📥 Danh mục thu nhập")
-        st.dataframe(pd.DataFrame(st.session_state.db.income_categories, columns=["Danh mục"]), hide_index=True)
+        st.subheader(translator.t("income_categories_list"))
+        income_df = pd.DataFrame(st.session_state.db.income_categories, columns=[translator.t("category")])
+        st.dataframe(income_df, hide_index=True)
         
-        with st.form("add_income_category"):
-            new_category = st.text_input("Thêm danh mục thu mới")
-            submitted = st.form_submit_button("➕ Thêm")
-            if submitted and new_category:
-                st.session_state.db.add_category('income', new_category)
-                st.success(f'Đã thêm danh mục "{new_category}"')
-                st.rerun()
+        with st.form("new_income_category"):
+            new_category = st.text_input(translator.t("new_income_category"))
+            if st.form_submit_button(translator.t("add_category")):
+                try:
+                    st.session_state.db.add_category('income', new_category)
+                    st.success(translator.t("category_added"))
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
     
     with tab2:
-        st.subheader("📤 Danh mục chi tiêu")
-        st.dataframe(pd.DataFrame(st.session_state.db.expense_categories, columns=["Danh mục"]), hide_index=True)
+        st.subheader(translator.t("expense_categories_list"))
+        expense_df = pd.DataFrame(st.session_state.db.expense_categories, columns=[translator.t("category")])
+        st.dataframe(expense_df, hide_index=True)
         
-        with st.form("add_expense_category"):
-            new_category = st.text_input("Thêm danh mục chi mới")
-            submitted = st.form_submit_button("➕ Thêm")
-            if submitted and new_category:
-                st.session_state.db.add_category('expense', new_category)
-                st.success(f'Đã thêm danh mục "{new_category}"')
-                st.rerun()
+        with st.form("new_expense_category"):
+            new_category = st.text_input(translator.t("new_expense_category"))
+            if st.form_submit_button(translator.t("add_category")):
+                try:
+                    st.session_state.db.add_category('expense', new_category)
+                    st.success(translator.t("category_added"))
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
 
 elif selected_option == "manage_budgets":
-    # --- Quản lý ngân sách ---
-    st.header('💰 Quản lý ngân sách')
+    st.header(f'💰 {translator.t("manage_budgets")}')
     
-    # Thêm/Sửa ngân sách
     with st.form("budget_form"):
         col1, col2 = st.columns(2)
         with col1:
-            budget_category = st.selectbox('Danh mục', st.session_state.db.expense_categories)
+            category = st.selectbox(
+                translator.t("select_category"),
+                st.session_state.db.expense_categories
+            )
         with col2:
-            budget_amount = st.number_input('Số tiền ngân sách', min_value=0)
+            amount = st.number_input(
+                translator.t("budget_amount"),
+                min_value=0,
+                step=100000
+            )
         
-        submitted = st.form_submit_button("💾 Lưu ngân sách")
-        if submitted:
-            st.session_state.db.set_budget(budget_category, budget_amount)
-            st.success(f'Đã đặt ngân sách {budget_category}: {format_currency(budget_amount)}')
+        if st.form_submit_button(translator.t("save_budget")):
+            st.session_state.db.set_budget(category, amount)
+            st.success(translator.t("budget_saved"))
             st.rerun()
     
-    # Hiển thị ngân sách hiện tại
+    st.subheader(translator.t("current_budgets"))
     budgets = st.session_state.db.get_budgets()
+    expenses = st.session_state.db.get_category_summary()
+    
     if budgets:
-        st.subheader('📊 Theo dõi ngân sách hiện tại')
-        expenses_by_category = st.session_state.db.get_category_summary()
-        
         for category, budget in budgets.items():
-            spent = expenses_by_category.get(category, 0)
+            spent = expenses.get(category, 0)
             progress = min(spent / budget * 100, 100) if budget > 0 else 0
             col1, col2 = st.columns([1, 4])
             with col1:
-                st.write(f"**{category}**")
-                st.write(f"{format_currency(spent)} / {format_currency(budget)}")
+                st.markdown(f"**{category}**")
+                st.caption(f"{format_currency(spent)} / {format_currency(budget)}")
             with col2:
                 st.progress(int(progress))
                 if spent > budget:
-                    st.warning(f"Vượt ngân sách {format_currency(spent - budget)}")
+                    st.error(translator.t("budget_exceeded").format(
+                        over=format_currency(spent - budget)
+                    ))
+    else:
+        st.info(translator.t("no_budgets_set"))
 
 elif selected_option == "payment_reminders":
-    # --- Nhắc nhở thanh toán ---
-    st.header('⏰ Nhắc nhở thanh toán')
+    st.header(f'⏰ {translator.t("payment_reminders")}')
     
-    # Thêm nhắc nhở mới
     with st.form("reminder_form"):
         col1, col2 = st.columns(2)
         with col1:
-            reminder_name = st.text_input('Tên nhắc nhở')
+            name = st.text_input(translator.t("reminder_name"))
         with col2:
-            reminder_date = st.date_input('Ngày đến hạn')
+            due_date = st.date_input(translator.t("due_date"))
         
         col1, col2 = st.columns(2)
         with col1:
-            reminder_amount = st.number_input('Số tiền', min_value=0)
+            amount = st.number_input(translator.t("amount"), min_value=0)
         with col2:
-            reminder_category = st.selectbox('Danh mục', st.session_state.db.expense_categories)
-        
-        submitted = st.form_submit_button("➕ Thêm nhắc nhở")
-        if submitted:
-            st.session_state.db.add_reminder(
-                reminder_name,
-                reminder_date.strftime('%Y-%m-%d'),
-                reminder_amount,
-                reminder_category
+            category = st.selectbox(
+                translator.t("category"),
+                st.session_state.db.expense_categories
             )
-            st.success('Đã thêm nhắc nhở!')
+        
+        if st.form_submit_button(translator.t("add_reminder")):
+            st.session_state.db.add_reminder(
+                name,
+                due_date.strftime('%Y-%m-%d'),
+                amount,
+                category
+            )
+            st.success(translator.t("reminder_added"))
             st.rerun()
     
-    # Hiển thị danh sách nhắc nhở
+    st.subheader(translator.t("active_reminders"))
     reminders = st.session_state.db.get_reminders()
+    today = datetime.now().date()
+    
     if not reminders.empty:
-        st.subheader('📋 Danh sách nhắc nhở')
-        today = datetime.now().date()
-        
         for _, row in reminders.iterrows():
-            due_date = datetime.strptime(row['due_date'], '%Y-%m-%d').date()
+            due_date = datetime.strptime(row['due_date'], "%Y-%m-%d").date()  # Thêm dòng này
             days_left = (due_date - today).days
+            status = ""
             
             if days_left < 0:
-                st.error(f"**QUÁ HẠN**: {row['name']} - {format_currency(row['amount'])} - {row['category']} (Quá hạn {abs(days_left)} ngày)")
-            elif days_left <= 7:
-                st.warning(f"**SẮP ĐẾN HẠN**: {row['name']} - {format_currency(row['amount'])} - {row['category']} (Còn {days_left} ngày)")
+                status = f"❌ {translator.t('overdue')} {abs(days_left)} {translator.t('days')}"
+                st.error(f"**{row['name']}** - {format_currency(row['amount'])} - {row['category']} - {status}")
+            elif days_left <= 3:
+                status = f"⚠️ {days_left} {translator.t('days_left')}"
+                st.warning(f"**{row['name']}** - {format_currency(row['amount'])} - {row['category']} - {status}")
             else:
-                st.info(f"{row['name']} - {format_currency(row['amount'])} - {row['category']} (Còn {days_left} ngày)")
+                status = f"⏳ {days_left} {translator.t('days_left')}"
+                st.info(f"**{row['name']}** - {format_currency(row['amount'])} - {row['category']} - {status}")
+    else:
+        st.info(translator.t("no_active_reminders"))
 
 elif selected_option == "saving_goals":
-    # --- Mục tiêu tiết kiệm ---
-    st.header('🎯 Mục tiêu tiết kiệm')
+    st.header(f'🎯 {translator.t("saving_goals")}')
     
-    # Thêm mục tiêu mới
-    with st.form("goal_form"):
+    with st.form("saving_goal_form"):
         col1, col2 = st.columns(2)
         with col1:
-            goal_name = st.text_input('Tên mục tiêu')
+            name = st.text_input(translator.t("goal_name"))
         with col2:
-            goal_amount = st.number_input('Số tiền mục tiêu', min_value=0)
+            target_amount = st.number_input(
+                translator.t("target_amount"),
+                min_value=1000,
+                step=100000
+            )
         
-        target_date = st.date_input('Ngày hoàn thành')
+        target_date = st.date_input(translator.t("target_date"))
         
-        submitted = st.form_submit_button("➕ Thêm mục tiêu")
-        if submitted:
+        if st.form_submit_button(translator.t("add_goal")):
             st.session_state.db.add_saving_goal(
-                goal_name,
-                goal_amount,
+                name,
+                target_amount,
                 target_date.strftime('%Y-%m-%d')
             )
-            st.success('Đã thêm mục tiêu!')
+            st.success(translator.t("goal_added"))
             st.rerun()
     
-    # Hiển thị danh sách mục tiêu
+    st.subheader(translator.t("active_goals"))
     goals = st.session_state.db.get_saving_goals()
+    current_balance = st.session_state.db.get_balance()
+    
     if not goals.empty:
-        st.subheader('📋 Danh sách mục tiêu')
         today = datetime.now().date()
-        
         for _, row in goals.iterrows():
-            target_date = datetime.strptime(row['target_date'], '%Y-%m-%d').date()
+            target_date = datetime.strptime(row['target_date'], "%Y-%m-%d").date()  # Thêm dòng này
             days_left = (target_date - today).days
-            progress = min(balance / row['amount'] * 100, 100)
+            progress = min((current_balance / row['amount']) * 100, 100)
             
-            st.subheader(row['name'])
-            st.progress(int(progress))
-            st.write(f"{format_currency(balance)} / {format_currency(row['amount'])} ({progress:.1f}%)")
-            st.write(f"⏳ Còn {days_left} ngày để hoàn thành")
-            
-            if balance >= row['amount']:
-                st.balloons()
-                st.success("🎉 Chúc mừng! Bạn đã đạt được mục tiêu!")
+            with st.container(border=True):
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.metric(translator.t("target"), format_currency(row['amount']))
+                    st.caption(f"{translator.t('days_left')}: {max(days_left, 0)}")
+                with col2:
+                    st.progress(int(progress))
+                    st.caption(f"{format_currency(current_balance)} / {format_currency(row['amount'])} ({progress:.1f}%)")
+                
+                if current_balance >= row['amount']:
+                    st.balloons()
+                    st.success(translator.t("goal_achieved"))
+    else:
+        st.info(translator.t("no_active_goals"))
 
 elif selected_option == "settings":
-    # --- Cài đặt & Dữ liệu ---
-    st.header('⚙️ Cài đặt & Dữ liệu')
+    st.header(f'⚙️ {translator.t("settings")}')
     
-    # Số dư ban đầu
-    st.subheader('💰 Số dư ban đầu')
-    initial_balance = st.number_input('Nhập số tiền hiện có', min_value=0)
-    if st.button('Cập nhật số dư'):
-        try:
-            st.session_state.db.add_initial_balance(initial_balance)
-            st.success('Đã cập nhật số dư ban đầu!')
-            st.rerun()
-        except Exception as e:
-            st.error(f'Lỗi: {str(e)}')
+    st.subheader(translator.t("initial_balance"))
+    initial_balance = st.number_input(translator.t("enter_initial_balance"), min_value=0)
+    if st.button(translator.t("update_balance")):
+        st.session_state.db.add_initial_balance(initial_balance)
+        st.success(translator.t("balance_updated"))
+        st.rerun()
     
-    # Quản lý dữ liệu
-    st.subheader('🗄️ Quản lý dữ liệu')
-    
-    if st.button('🔄 Làm mới dữ liệu'):
+    st.subheader(translator.t("data_management"))
+    if st.button(translator.t("refresh_data")):
         st.session_state.db.load_categories()
         st.rerun()
-        st.success('Đã làm mới dữ liệu!')
     
+    st.subheader(f'⚠️ {translator.t("delete_data")}')
+    if st.button(translator.t("delete_all_data")):
+        st.session_state.db.reset_data()
+        st.success(translator.t("data_deleted"))
+        st.rerun()
+
+    # Phần sao lưu và khôi phục dữ liệu
     st.divider()
+    st.subheader(f'💾 {translator.t("backup_restore")}')
     
-    # Xóa dữ liệu
-    st.subheader('⚠️ Xóa dữ liệu')
+    col1, col2 = st.columns(2)
+    with col1:
+        # Xuất dữ liệu
+        if st.button(translator.t("export_data")):
+            try:
+                data = {
+                    "transactions": st.session_state.db.load_transactions().to_dict(orient="records"),
+                    "budgets": st.session_state.db.get_budgets(),
+                    "reminders": st.session_state.db.get_reminders().to_dict(orient="records"),
+                    "goals": st.session_state.db.get_saving_goals().to_dict(orient="records")
+                }
+                st.download_button(
+                    label=translator.t("download_backup"),
+                    data=json.dumps(data, ensure_ascii=False, indent=2),
+                    file_name=f"finance_backup_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json"
+                )
+            except Exception as e:
+                st.error(f"{translator.t('export_error')}: {str(e)}")
     
-    if 'show_delete_confirmation' not in st.session_state:
-        st.session_state.show_delete_confirmation = False
-    
-    if st.button('🗑️ Xóa tất cả dữ liệu'):
-        st.session_state.show_delete_confirmation = True
-    
-    if st.session_state.show_delete_confirmation:
-        st.warning('Bạn có chắc chắn muốn xóa tất cả dữ liệu?')
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button('✅ Xác nhận'):
-                st.session_state.db.reset_data()
-                st.success('Đã xóa tất cả dữ liệu!')
-                st.session_state.show_delete_confirmation = False
-                st.rerun()
-        with col2:
-            if st.button('❌ Hủy bỏ'):
-                st.session_state.show_delete_confirmation = False
-                st.rerun()
+    with col2:
+        # Nhập dữ liệu
+        uploaded_file = st.file_uploader(translator.t("upload_backup"), type=["json"])
+        if uploaded_file:
+            try:
+                data = json.load(uploaded_file)
+                
+                # Xác nhận ghi đè dữ liệu
+                if st.checkbox(translator.t("confirm_overwrite")):
+                    if st.button(translator.t("import_data")):
+                        # Xóa dữ liệu cũ
+                        st.session_state.db.reset_data()
+                        
+                        # Khôi phục transactions
+                        for transaction in data.get("transactions", []):
+                            st.session_state.db.add_transaction(
+                                transaction["ngay"],
+                                transaction["loai"],
+                                transaction["danh_muc"],
+                                transaction["so_tien"],
+                                transaction["mo_ta"]
+                            )
+                        
+                        # Khôi phục budgets
+                        for category, amount in data.get("budgets", {}).items():
+                            st.session_state.db.set_budget(category, amount)
+                        
+                        # Khôi phục reminders
+                        for reminder in data.get("reminders", []):
+                            st.session_state.db.add_reminder(
+                                reminder["name"],
+                                reminder["due_date"],
+                                reminder["amount"],
+                                reminder["category"]
+                            )
+                        
+                        # Khôi phục saving goals
+                        for goal in data.get("goals", []):
+                            st.session_state.db.add_saving_goal(
+                                goal["name"],
+                                goal["amount"],
+                                goal["target_date"]
+                            )
+                        
+                        st.success(translator.t("restore_success"))
+                        st.rerun()
+            except Exception as e:
+                st.error(f"{translator.t('import_error')}: {str(e)}")
+
+# Kết thúc phần settings
