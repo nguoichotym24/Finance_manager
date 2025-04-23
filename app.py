@@ -112,39 +112,48 @@ if selected_option == "overview":
         )
 
 elif selected_option == "add_transaction":
-    # --- Thêm giao dịch mới ---
     st.header('💸 Thêm giao dịch mới')
     
+    # Tách selectbox ra khỏi form chính để có thể tự động rerun
+    trans_type = st.radio(
+        "Loại giao dịch",
+        ["Thu", "Chi"],
+        horizontal=True,
+        key="trans_type_radio"
+    )
+    
+    # Lấy danh mục tương ứng
+    categories = (
+        st.session_state.db.income_categories 
+        if trans_type == "Thu" 
+        else st.session_state.db.expense_categories
+    )
+    
+    # Form chính
     with st.form("transaction_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            date = st.date_input('Ngày', datetime.now())
-        with col2:
-            trans_type = st.selectbox('Loại giao dịch', ['Thu', 'Chi'])
-        
-        # Hiển thị danh mục phù hợp
-        if trans_type == 'Thu':
-            categories = st.session_state.db.income_categories
-        else:
-            categories = st.session_state.db.expense_categories
-        
-        category = st.selectbox('Danh mục', categories)
-        amount = st.number_input('Số tiền', min_value=0)
-        description = st.text_input('Mô tả')
+        date = st.date_input("Ngày", datetime.now())
+        category = st.selectbox("Danh mục", categories)
+        amount = st.number_input("Số tiền", min_value=0)
+        description = st.text_input("Mô tả")
         
         submitted = st.form_submit_button("💾 Lưu giao dịch")
-        if submitted:
-            try:
-                st.session_state.db.add_transaction(
-                    date.strftime('%Y-%m-%d'),
-                    trans_type,
-                    category,
-                    amount,
-                    description
-                )
-                st.success('Đã thêm giao dịch thành công!')
-            except Exception as e:
-                st.error(f'Lỗi: {str(e)}')
+        
+        # Debug (có thể bỏ sau khi kiểm tra)
+        st.write(f"Đang chọn: {trans_type}")
+        st.write(f"Danh mục hiển thị: {categories}")
+
+    if submitted:
+        try:
+            st.session_state.db.add_transaction(
+                date.strftime('%Y-%m-%d'),
+                trans_type,
+                category,
+                amount,
+                description
+            )
+            st.success("Giao dịch đã được lưu!")
+        except Exception as e:
+            st.error(f"Lỗi: {str(e)}")
 
 elif selected_option == "view_transactions":
     # --- Xem lịch sử giao dịch ---

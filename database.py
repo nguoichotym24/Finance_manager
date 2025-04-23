@@ -83,20 +83,42 @@ class Database:
     
     def load_categories(self):
         with self._get_connection() as conn:
+            # Load existing categories
             self.income_categories = [row[0] for row in 
                 conn.execute("SELECT name FROM categories WHERE type = 'income'")]
             self.expense_categories = [row[0] for row in 
                 conn.execute("SELECT name FROM categories WHERE type = 'expense'")]
             
-            if not self.income_categories:
-                default_income = ['Lương', 'Thưởng', 'Đầu tư', 'Kinh doanh', 'Quà tặng', 'Khác']
-                for cat in default_income:
+            print("[DEBUG] Danh mục thu từ database:", self.income_categories)  # <-- Thêm dòng này
+            print("[DEBUG] Danh mục chi từ database:", self.expense_categories)  # <-- Thêm dòng này
+
+
+            # Thêm danh mục thu mặc định nếu chưa tồn tại
+            default_income = ['Lương', 'Thưởng', 'Đầu tư', 'Kinh doanh', 'Quà tặng', 'Khác']
+            for cat in default_income:
+                if cat not in self.income_categories:
+                    self.add_category('income', cat)  # Chỉ thêm nếu chưa có
+
+            # Thêm danh mục chi mặc định nếu chưa tồn tại
+            default_expense = ['Ăn uống', 'Nhà ở', 'Đi lại', 'Giải trí', 'Y tế', 'Giáo dục', 'Tiết kiệm', 'Khác']
+            for cat in default_expense:
+                if cat not in self.expense_categories:
+                    self.add_category('expense', cat)  # Chỉ thêm nếu chưa có
+
+            print("[DEBUG] Income categories after load:", self.income_categories)
+            print("[DEBUG] Expense categories after load:", self.expense_categories)
+            print("[DEBUG] Danh mục chi trong database:", self.expense_categories)
+            
+            # Thêm danh mục mặc định
+            for cat in default_income:
+                if cat not in self.income_categories:
+                    print(f"[DEBUG] Adding income category: {cat}")
                     self.add_category('income', cat)
             
-            if not self.expense_categories:
-                default_expense = ['Ăn uống', 'Nhà ở', 'Đi lại', 'Giải trí', 'Y tế', 'Giáo dục', 'Tiết kiệm', 'Khác']
-                for cat in default_expense:
-                    self.add_category('expense', cat)
+            for cat in default_expense:
+                if cat not in self.expense_categories:
+                    print(f"[DEBUG] Adding expense category: {cat}")
+                    self.add_category('expense', cat)  # <-- Đảm bảo đúng chính tả
     
     def add_category(self, category_type, name):
         with self._get_connection() as conn:
