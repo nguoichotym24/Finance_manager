@@ -5,6 +5,12 @@ import hashlib
 from database import Database
 from utils import create_expense_by_category_chart, create_expense_trend_chart, format_currency
 
+# Thêm vào đầu file app.py
+primaryColor = "#2a9d8f"
+backgroundColor = "#f8f9fa"
+secondaryBackgroundColor = "#e9ecef"
+textColor = "#212529"
+
 # Khởi tạo session state
 if 'db' not in st.session_state:
     st.session_state.db = Database()
@@ -14,25 +20,71 @@ if 'db' not in st.session_state:
 st.title('💰 Quản lý Tài chính Cá nhân')
 
 # --- Phần xác thực ---
+# --- Phần xác thực ---
 with st.sidebar:
-    st.subheader('🔐 Bảo mật')
+    st.subheader('🔐 Đăng nhập / Đăng ký')
     
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
+        st.session_state.user_info = None
     
     if not st.session_state.authenticated:
-        password = st.text_input('Mật khẩu', type='password', key='auth_password')
-        if st.button('Đăng nhập'):
-            if hashlib.sha256(password.encode()).hexdigest() == '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92':
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error('Mật khẩu không đúng')
+        tab1, tab2 = st.tabs(["Đăng nhập", "Đăng ký"])
+        
+        with tab1:
+            with st.form("login_form"):
+                username = st.text_input("Tên đăng nhập")
+                password = st.text_input("Mật khẩu", type="password")
+                submitted = st.form_submit_button("Đăng nhập")
+                
+                if submitted:
+                    # Kiểm tra thông tin đăng nhập đơn giản (có thể thay bằng Auth0 hoặc Firebase sau)
+                    if username and password == "123456":  # Mật khẩu mặc định để demo
+                        st.session_state.authenticated = True
+                        st.session_state.user_info = {
+                            "name": username,
+                            "email": f"{username}@example.com"
+                        }
+                        st.rerun()
+                    else:
+                        st.error("Tên đăng nhập hoặc mật khẩu không đúng")
+            
+            st.write("Hoặc đăng nhập bằng")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Google", key="google_login"):
+                    st.info("Tính năng đăng nhập bằng Google sẽ được thêm sau")
+            with col2:
+                if st.button("Facebook", key="fb_login"):
+                    st.info("Tính năng đăng nhập bằng Facebook sẽ được thêm sau")
+        
+        with tab2:
+            with st.form("register_form"):
+                new_username = st.text_input("Tên đăng nhập mới")
+                new_email = st.text_input("Email")
+                new_password = st.text_input("Mật khẩu mới", type="password")
+                confirm_password = st.text_input("Xác nhận mật khẩu", type="password")
+                submitted = st.form_submit_button("Đăng ký")
+                
+                if submitted:
+                    if new_password == confirm_password:
+                        st.success("Đăng ký thành công! Vui lòng đăng nhập.")
+                    else:
+                        st.error("Mật khẩu xác nhận không khớp")
     else:
-        st.success('Đã đăng nhập')
-        if st.button('Đăng xuất'):
-            st.session_state.authenticated = False
-            st.rerun()
+        st.success(f"Xin chào, {st.session_state.user_info['name']}!")
+        
+        with st.expander("Thông tin tài khoản"):
+            st.write(f"**Tên:** {st.session_state.user_info['name']}")
+            st.write(f"**Email:** {st.session_state.user_info['email']}")
+            
+            if st.button("Đổi mật khẩu"):
+                st.info("Tính năng đổi mật khẩu sẽ được thêm sau")
+            
+            if st.button("Đăng xuất"):
+                st.session_state.authenticated = False
+                st.session_state.user_info = None
+                st.rerun()
 
 if not st.session_state.authenticated:
     st.warning('Vui lòng đăng nhập để sử dụng ứng dụng')
@@ -82,6 +134,11 @@ balance = st.session_state.db.get_balance()
 if selected_option == "overview":
     # --- Trang tổng quan ---
     st.header('🏠 Tổng quan tài chính')
+
+    with st.expander("👤 Thông tin tài khoản"):
+        st.write(f"**Người dùng:** {st.session_state.user_info['name']}")
+        st.write(f"**Email:** {st.session_state.user_info['email']}")
+        st.write(f"**Ngày tham gia:** {datetime.now().strftime('%d/%m/%Y')}")
     
     # Hiển thị các chỉ số chính
     col1, col2, col3 = st.columns(3)
@@ -137,11 +194,7 @@ elif selected_option == "add_transaction":
         description = st.text_input("Mô tả")
         
         submitted = st.form_submit_button("💾 Lưu giao dịch")
-        
-        # Debug (có thể bỏ sau khi kiểm tra)
-        st.write(f"Đang chọn: {trans_type}")
-        st.write(f"Danh mục hiển thị: {categories}")
-
+    
     if submitted:
         try:
             st.session_state.db.add_transaction(
